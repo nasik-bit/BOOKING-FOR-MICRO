@@ -3,11 +3,13 @@ Option Explicit
 
 Public Sub GenerateCurrentStock()
 
-    Const MOV_COL_LOCATION As Long = 7
-    Const MOV_COL_QTY As Long = 8
-    Const OPEN_COL_TYPE As Long = 2
-    Const OPEN_COL_LOCATION As Long = 3
-    Const OPEN_COL_QTY As Long = 4
+    Const LOC_COUNT As Long = 4
+    Const OUT_ROW_COUNT As Long = 5
+    Const MOV_COL_LOCATION As Long = 1
+    Const MOV_COL_QTY As Long = 2
+    Const OPEN_COL_TYPE As Long = 1
+    Const OPEN_COL_LOCATION As Long = 2
+    Const OPEN_COL_QTY As Long = 3
 
     Dim wsMov As Worksheet
     Dim wsOpen As Worksheet
@@ -18,9 +20,9 @@ Public Sub GenerateCurrentStock()
 
     Dim movData As Variant
     Dim openData As Variant
-    Dim outData(1 To 5, 1 To 2) As Variant
+    Dim outData(1 To OUT_ROW_COUNT, 1 To 2) As Variant
 
-    Dim totals(1 To 4) As Double
+    Dim totals(1 To LOC_COUNT) As Double
     Dim grandTotal As Double
 
     Dim r As Long
@@ -35,7 +37,7 @@ Public Sub GenerateCurrentStock()
 
     movLast = LastRow(wsMov, 1)
     If movLast >= 2 Then
-        movData = wsMov.Range("A2:I" & movLast).Value2
+        movData = wsMov.Range("G2:H" & movLast).Value2
 
         For r = 1 To UBound(movData, 1)
             idx = LocationIndex(movData(r, MOV_COL_LOCATION))
@@ -45,7 +47,7 @@ Public Sub GenerateCurrentStock()
 
     openLast = LastRow(wsOpen, 1)
     If openLast >= 2 Then
-        openData = wsOpen.Range("A2:D" & openLast).Value2
+        openData = wsOpen.Range("B2:D" & openLast).Value2
 
         For r = 1 To UBound(openData, 1)
             idx = LocationIndex(openData(r, OPEN_COL_LOCATION))
