@@ -74,7 +74,12 @@ End Function
 
 Public Function GetColumn(ByVal TargetSheet As Worksheet, ByVal HeaderName As String) As Long
     Dim c As Range
-    Set c = TargetSheet.Rows(1).Find(What:=HeaderName, LookIn:=xlValues, LookAt:=xlWhole, MatchCase:=False)
+    Set c = TargetSheet.Rows(1).Find(What:=HeaderName, _
+                                     LookIn:=xlValues, _
+                                     LookAt:=xlWhole, _
+                                     SearchOrder:=xlByColumns, _
+                                     SearchDirection:=xlNext, _
+                                     MatchCase:=False)
 
     If Not c Is Nothing Then
         GetColumn = c.Column
@@ -96,16 +101,22 @@ Public Function GetPrefix(ByVal CNNo As Variant) As String
 End Function
 
 Public Function Nz(ByVal v As Variant, Optional ByVal DefaultValue As Double = 0) As Double
+    Dim txt As String
+
     If IsError(v) Then
         Nz = DefaultValue
     ElseIf IsNull(v) Then
         Nz = DefaultValue
-    ElseIf Len(Trim$(CStr(v))) = 0 Then
-        Nz = DefaultValue
-    ElseIf IsNumeric(v) Then
-        Nz = CDbl(v)
     Else
-        Nz = DefaultValue
+        txt = Trim$(CStr(v))
+
+        If Len(txt) = 0 Then
+            Nz = DefaultValue
+        ElseIf IsNumeric(v) Then
+            Nz = CDbl(v)
+        Else
+            Nz = DefaultValue
+        End If
     End If
 End Function
 
