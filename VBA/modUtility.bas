@@ -6,7 +6,8 @@ Public Const SHEET_DELIVERY As String = "DELIVERY"
 Public Const SHEET_MOVEMENT As String = "MOVEMENT"
 Public Const SHEET_MASTER As String = "MASTER"
 Public Const SHEET_STOCK As String = "CURRENT_STOCK"
-Public Const SHEET_OPENING As String = "OPENING_BALANCE"
+Public Const SHEET_OPENING   As String = "OPENING_BALANCE"
+Public Const SHEET_DATE_WISE As String = "DATE_WISE_STOCK"
 
 Public Function ws(ByVal SheetName As String) As Worksheet
     Set ws = ThisWorkbook.Worksheets(SheetName)
