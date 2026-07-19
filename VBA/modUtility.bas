@@ -55,7 +55,7 @@ CreateSheetError:
 End Function
 
 Public Sub ClearData(ByVal TargetSheet As Worksheet)
-    TargetSheet.Cells.Clear
+    TargetSheet.Cells.ClearContents
 End Sub
 
 Public Sub ClearDataKeepHeader(ByVal TargetSheet As Worksheet)
@@ -70,7 +70,6 @@ End Sub
 
 Public Function LastRow(ByVal TargetSheet As Worksheet, ByVal Col As Variant) As Long
     LastRow = TargetSheet.Cells(TargetSheet.Rows.Count, Col).End(xlUp).Row
-    If LastRow < 1 Then LastRow = 1
 End Function
 
 Public Function GetColumn(ByVal TargetSheet As Worksheet, ByVal HeaderName As String) As Long
@@ -101,7 +100,7 @@ Public Function Nz(ByVal v As Variant, Optional ByVal DefaultValue As Double = 0
         Nz = DefaultValue
     ElseIf IsNull(v) Then
         Nz = DefaultValue
-    ElseIf LenB(Trim$(CStr(v))) = 0 Then
+    ElseIf Len(Trim$(CStr(v))) = 0 Then
         Nz = DefaultValue
     ElseIf IsNumeric(v) Then
         Nz = CDbl(v)
