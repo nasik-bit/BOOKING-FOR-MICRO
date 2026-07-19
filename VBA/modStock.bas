@@ -3,6 +3,12 @@ Option Explicit
 
 Public Sub GenerateCurrentStock()
 
+    Const MOV_COL_LOCATION As Long = 7
+    Const MOV_COL_QTY As Long = 8
+    Const OPEN_COL_TYPE As Long = 2
+    Const OPEN_COL_LOCATION As Long = 3
+    Const OPEN_COL_QTY As Long = 4
+
     Dim wsMov As Worksheet
     Dim wsOpen As Worksheet
     Dim wsStock As Worksheet
@@ -20,8 +26,8 @@ Public Sub GenerateCurrentStock()
     Dim r As Long
     Dim idx As Long
 
-    Set wsMov = ws(SHEET_MOVEMENT)
-    Set wsOpen = ws(SHEET_OPENING)
+    Set wsMov = ThisWorkbook.Worksheets(SHEET_MOVEMENT)
+    Set wsOpen = ThisWorkbook.Worksheets(SHEET_OPENING)
     Set wsStock = CreateSheet(SHEET_STOCK)
 
     wsStock.Cells.Clear
@@ -32,8 +38,8 @@ Public Sub GenerateCurrentStock()
         movData = wsMov.Range("A2:I" & movLast).Value2
 
         For r = 1 To UBound(movData, 1)
-            idx = LocationIndex(movData(r, 7))
-            If idx > 0 Then totals(idx) = totals(idx) + Nz(movData(r, 8))
+            idx = LocationIndex(movData(r, MOV_COL_LOCATION))
+            If idx > 0 Then totals(idx) = totals(idx) + Nz(movData(r, MOV_COL_QTY))
         Next r
     End If
 
@@ -42,9 +48,9 @@ Public Sub GenerateCurrentStock()
         openData = wsOpen.Range("A2:D" & openLast).Value2
 
         For r = 1 To UBound(openData, 1)
-            idx = LocationIndex(openData(r, 3))
+            idx = LocationIndex(openData(r, OPEN_COL_LOCATION))
             If idx > 0 Then
-                totals(idx) = totals(idx) + GetOpeningImpact(openData(r, 2), Nz(openData(r, 4)))
+                totals(idx) = totals(idx) + GetOpeningImpact(openData(r, OPEN_COL_TYPE), Nz(openData(r, OPEN_COL_QTY)))
             End If
         Next r
     End If
@@ -94,8 +100,6 @@ Private Function GetOpeningImpact(ByVal TransactionType As Variant, ByVal Qty As
             GetOpeningImpact = Abs(Qty)
         Case "MOVEMENT OUT", "SCRAP"
             GetOpeningImpact = -Abs(Qty)
-        Case "PHYSICAL ADJUSTMENT"
-            GetOpeningImpact = Qty
         Case Else
             GetOpeningImpact = Qty
     End Select
