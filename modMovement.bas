@@ -68,13 +68,13 @@ Private Sub ProcessBookingRow(wsBook As Worksheet, _
     'Ignore Packing
     '-------------------------
 
-    If Not gPackingType.Exists(UCase(Packing)) Then Exit Sub
+    If Not gPacking.Exists(UCase(Packing)) Then Exit Sub
 
     '-------------------------
     'Ignore Item Code
     '-------------------------
 
-    If gIgnoreItem.Exists(ItemCode) Then Exit Sub
+    If gIgnoreItems.Exists(ItemCode) Then Exit Sub
 
     '-------------------------
     'Ignore POD
@@ -489,7 +489,6 @@ Private Sub AddMovementEntry( _
         Prefix
 
 End Sub
-
 
 
 
