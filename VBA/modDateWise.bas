@@ -166,7 +166,7 @@ Public Sub GenerateDateWiseStock()
                 If Not dateDeltaDict.Exists(dKey) Then
                     dateDeltaDict(dKey) = Array(0#, 0#, 0#, 0#, 0#, 0#, 0#, 0#)
                 End If
-                qty     = Nz(movData(r, MOV_QTY))
+                qty     = Nz(movData(r, MOV_QTY), 0)
                 tempArr = dateDeltaDict(dKey)
                 locOff  = (idx - 1) * 2              ' 0-based In/Out slot pair
                 If qty >= 0 Then
@@ -343,7 +343,8 @@ AutoFitAndFreeze:
     ' Freeze top row.
     ' FreezePanes requires the target sheet to be active; ScreenUpdating
     ' is False at this point so the brief activation is invisible to users.
-    Application.Goto wsDW.Range("A2"), True
+    wsDW.Activate
+    wsDW.Range("A2").Select
     ActiveWindow.FreezePanes = False   ' Release any existing freeze first
     ActiveWindow.FreezePanes = True    ' Freeze at row 1 (active cell = A2)
 
@@ -493,7 +494,9 @@ Private Sub DW_QuickSort(ByRef arr() As Variant, ByVal lo As Long, ByVal hi As L
         Do While arr(i) < pivot : i = i + 1 : Loop
         Do While arr(j) > pivot : j = j - 1 : Loop
         If i <= j Then
-            swapVal = arr(i) : arr(i) = arr(j) : arr(j) = swapVal
+            swapVal = arr(i)
+            arr(i)  = arr(j)
+            arr(j)  = swapVal
             i = i + 1
             j = j - 1
         End If
