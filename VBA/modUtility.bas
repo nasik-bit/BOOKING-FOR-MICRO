@@ -33,14 +33,25 @@ Public Sub AppEnd()
 End Sub
 
 Public Function CreateSheet(ByVal SheetName As String) As Worksheet
+    Dim existingSheet As Worksheet
+
     On Error Resume Next
-    Set CreateSheet = ThisWorkbook.Worksheets(SheetName)
+    Set existingSheet = ThisWorkbook.Worksheets(SheetName)
     On Error GoTo 0
 
-    If CreateSheet Is Nothing Then
+    If Not existingSheet Is Nothing Then
+        Set CreateSheet = existingSheet
+    Else
         Set CreateSheet = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.Count))
+        On Error GoTo CreateSheetError
         CreateSheet.Name = SheetName
+        On Error GoTo 0
     End If
+
+    Exit Function
+
+CreateSheetError:
+    Err.Raise Err.Number, "modUtility.CreateSheet", Err.Description
 End Function
 
 Public Sub ClearData(ByVal TargetSheet As Worksheet)
@@ -86,7 +97,11 @@ Public Function GetPrefix(ByVal CNNo As Variant) As String
 End Function
 
 Public Function Nz(ByVal v As Variant, Optional ByVal DefaultValue As Double = 0) As Double
-    If IsError(v) Or IsNull(v) Or LenB(Trim$(CStr(v))) = 0 Then
+    If IsError(v) Then
+        Nz = DefaultValue
+    ElseIf IsNull(v) Then
+        Nz = DefaultValue
+    ElseIf LenB(Trim$(CStr(v))) = 0 Then
         Nz = DefaultValue
     ElseIf IsNumeric(v) Then
         Nz = CDbl(v)
