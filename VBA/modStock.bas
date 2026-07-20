@@ -70,7 +70,7 @@ Public Sub GenerateCurrentStock()
                 End If
 
                 If dKey = earliestOpenDate Then
-                totals(idx) = totals(idx) + GetOpeningImpact(openData(r, OPEN_COL_TYPE), Nz(openData(r, OPEN_COL_QTY)))
+                    totals(idx) = totals(idx) + GetOpeningImpact(openData(r, OPEN_COL_TYPE), Nz(openData(r, OPEN_COL_QTY)))
                 End If
             End If
         Next r
@@ -164,8 +164,12 @@ Private Sub StockQuickSort(ByRef arr() As Variant, ByVal lo As Long, ByVal hi As
     j = hi
 
     Do While i <= j
-        Do While arr(i) < pivot: i = i + 1: Loop
-        Do While arr(j) > pivot: j = j - 1: Loop
+        Do While arr(i) < pivot
+            i = i + 1
+        Loop
+        Do While arr(j) > pivot
+            j = j - 1
+        Loop
         If i <= j Then
             tmp = arr(i)
             arr(i) = arr(j)
@@ -183,12 +187,8 @@ End Sub
 Private Function StockZeroDeltas(ByVal count As Long) As Variant
 
     Dim arr() As Double
-    Dim i As Long
 
     ReDim arr(0 To count - 1)
-    For i = 0 To count - 1
-        arr(i) = 0#
-    Next i
     StockZeroDeltas = arr
 
 End Function

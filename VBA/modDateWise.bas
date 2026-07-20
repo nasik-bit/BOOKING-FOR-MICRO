@@ -155,8 +155,8 @@ Public Sub GenerateDateWiseStock()
                     dKey = 0
                 End If
                 If dKey = earliestOpenDate Then
-                runTotals(idx) = runTotals(idx) + _
-                    DW_OpeningImpact(openData(r, OPEN_TYPE), Nz(openData(r, OPEN_QTY)))
+                    runTotals(idx) = runTotals(idx) + _
+                        DW_OpeningImpact(openData(r, OPEN_TYPE), Nz(openData(r, OPEN_QTY)))
                 End If
             End If
         Next r
@@ -503,12 +503,8 @@ End Function
 Private Function DW_ZeroDateDelta() As Variant
 
     Dim arr() As Double
-    Dim i As Long
 
     ReDim arr(0 To (LOC_COUNT * 2) - 1)
-    For i = 0 To (LOC_COUNT * 2) - 1
-        arr(i) = 0#
-    Next i
     DW_ZeroDateDelta = arr
 
 End Function
