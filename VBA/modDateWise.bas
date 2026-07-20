@@ -126,6 +126,7 @@ Public Sub GenerateDateWiseStock()
     Set wsOpen = ThisWorkbook.Worksheets(SHEET_OPENING)
     Set wsMov  = ThisWorkbook.Worksheets(SHEET_MOVEMENT)
     Set wsDW   = CreateSheet(SHEET_DATE_WISE)
+    earliestOpenDate = 2147483647
 
     wsDW.Cells.Clear   ' Wipe content AND formatting from any prior run
 

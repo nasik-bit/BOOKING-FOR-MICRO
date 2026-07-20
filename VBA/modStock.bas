@@ -41,6 +41,7 @@ Public Sub GenerateCurrentStock()
     Set wsMov = ThisWorkbook.Worksheets(SHEET_MOVEMENT)
     Set wsOpen = ThisWorkbook.Worksheets(SHEET_OPENING)
     Set wsStock = CreateSheet(SHEET_STOCK)
+    earliestOpenDate = 2147483647
 
     wsStock.Cells.Clear
     wsStock.Range("A1:B1").Value = Array("Location", "Current Stock")
