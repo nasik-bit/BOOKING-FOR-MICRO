@@ -41,16 +41,16 @@ Option Explicit
 ' --- Error-log sheet name ------------------------------------------------
 Private Const SHEET_ERROR_LOG As String = "ERROR_LOG"
 
-' --- MOVEMENT column offsets (relative to A2:H bulk read) ----------------
-Private Const MOV_DATE As Long = 1   ' Col A  Event Date
-Private Const MOV_LOC  As Long = 7   ' Col G  Location
-Private Const MOV_QTY  As Long = 8   ' Col H  Packets (positive = IN, negative = OUT)
+' --- MOVEMENT column offsets (resolved at runtime via GetColumn) ---------
+Private MOV_DATE As Long   ' Col "Event Date"
+Private MOV_LOC  As Long   ' Col "Location"
+Private MOV_QTY  As Long   ' Col "Packets" (positive = IN, negative = OUT)
 
-' --- OPENING_BALANCE column offsets (relative to A2:D bulk read) ---------
-Private Const OPEN_DATE As Long = 1  ' Col A  Date
-Private Const OPEN_TYPE As Long = 2  ' Col B  Transaction Type
-Private Const OPEN_LOC  As Long = 3  ' Col C  Location
-Private Const OPEN_QTY  As Long = 4  ' Col D  Quantity
+' --- OPENING_BALANCE column offsets (resolved at runtime via GetColumn) --
+Private OPEN_DATE As Long  ' Col "Date"
+Private OPEN_TYPE As Long  ' Col "Transaction Type"
+Private OPEN_LOC  As Long  ' Col "Location"
+Private OPEN_QTY  As Long  ' Col "Qty"
 
 ' --- Location constants (1-based) ----------------------------------------
 Private Const LOC_COUNT As Long = 4  ' M&M=1  NASHIK=2  PUNE=3  CK=4
@@ -117,6 +117,8 @@ Public Sub GenerateDateWiseStock()
 
     Dim openLast As Long
     Dim movLast  As Long
+    Dim openReadCols As Long
+    Dim movReadCols  As Long
 
     AppStart
     On Error GoTo ErrHandler
@@ -129,17 +131,41 @@ Public Sub GenerateDateWiseStock()
     Set wsDW   = CreateSheet(SHEET_DATE_WISE)
     earliestOpenDate = DATEWISE_MAX_LONG
 
+    ' ------------------------------------------------------------------
+    ' Resolve column positions dynamically (no hardcoded column numbers)
+    ' ------------------------------------------------------------------
+    MOV_DATE = GetColumn(wsMov, "Event Date")
+    MOV_LOC = GetColumn(wsMov, "Location")
+    MOV_QTY = GetColumn(wsMov, "Packets")
+    movReadCols = WorksheetFunction.Max(MOV_DATE, MOV_LOC, MOV_QTY)
+
+    OPEN_DATE = GetColumn(wsOpen, "Date")
+    OPEN_TYPE = GetColumn(wsOpen, "Transaction Type")
+    OPEN_LOC = GetColumn(wsOpen, "Location")
+    OPEN_QTY = GetColumn(wsOpen, "Qty")
+    openReadCols = WorksheetFunction.Max(OPEN_DATE, OPEN_TYPE, OPEN_LOC, OPEN_QTY)
+
+    If MOV_DATE = 0 Or MOV_LOC = 0 Or MOV_QTY = 0 Then
+        Err.Raise vbObjectError + 1, "modDateWise.GenerateDateWiseStock", _
+            "MOVEMENT sheet is missing one of the required headers: Event Date, Location, Packets."
+    End If
+
+    If OPEN_DATE = 0 Or OPEN_TYPE = 0 Or OPEN_LOC = 0 Or OPEN_QTY = 0 Then
+        Err.Raise vbObjectError + 2, "modDateWise.GenerateDateWiseStock", _
+            "OPENING_BALANCE sheet is missing one of the required headers: Date, Transaction Type, Location, Qty."
+    End If
+
     wsDW.Cells.Clear   ' Wipe content AND formatting from any prior run
 
     ' ==================================================================
     ' Step 1  –  Seed running totals from earliest OPENING_BALANCE date only
     ' ==================================================================
-    openLast = LastRow(wsOpen, 1)
+    openLast = LastRow(wsOpen, OPEN_DATE)
     If openLast >= 2 Then
-        openData = wsOpen.Range("A2:D" & openLast).Value2
+        openData = wsOpen.Range(wsOpen.Cells(2, 1), wsOpen.Cells(openLast, openReadCols)).Value2
         For r = 1 To UBound(openData, 1)
             idx = DW_LocationIndex(openData(r, OPEN_LOC))
-            If idx > 0 And IsDate(openData(r, OPEN_DATE)) Then
+            If idx > 0 And IsValidDateValue(openData(r, OPEN_DATE)) Then
                 dKey = CLng(CDate(openData(r, OPEN_DATE)))
                 If Not hasOpeningDate Or dKey < earliestOpenDate Then
                     earliestOpenDate = dKey
@@ -151,7 +177,7 @@ Public Sub GenerateDateWiseStock()
         For r = 1 To UBound(openData, 1)
             idx = DW_LocationIndex(openData(r, OPEN_LOC))
             If idx > 0 And hasOpeningDate Then
-                If IsDate(openData(r, OPEN_DATE)) Then
+                If IsValidDateValue(openData(r, OPEN_DATE)) Then
                     dKey = CLng(CDate(openData(r, OPEN_DATE)))
                 Else
                     dKey = 0
@@ -172,9 +198,9 @@ Public Sub GenerateDateWiseStock()
     ' ==================================================================
     ' Step 2  –  Read MOVEMENT into bulk array
     ' ==================================================================
-    movLast = LastRow(wsMov, 1)
+    movLast = LastRow(wsMov, MOV_DATE)
     If movLast >= 2 Then
-        movData = wsMov.Range("A2:H" & movLast).Value2
+        movData = wsMov.Range(wsMov.Cells(2, 1), wsMov.Cells(movLast, movReadCols)).Value2
 
         ' ==================================================================
         ' Step 3  –  Build per-date In / Out delta dictionary (O(n) single pass)
@@ -183,7 +209,7 @@ Public Sub GenerateDateWiseStock()
         '   Negative Packets value  →  OUT (slot locOff + 1, stored as Abs)
         ' ==================================================================
         For r = 1 To UBound(movData, 1)
-            If IsDate(movData(r, MOV_DATE)) Then               ' Rule 9: skip blank rows
+            If IsValidDateValue(movData(r, MOV_DATE)) Then               ' Rule 9: skip blank rows
                 idx = DW_LocationIndex(movData(r, MOV_LOC))
                 If idx > 0 Then
                     dKey = CLng(CDate(movData(r, MOV_DATE)))

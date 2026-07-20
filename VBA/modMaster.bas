@@ -9,26 +9,61 @@ Public Sub LoadMaster()
     Dim ws As Worksheet
     Dim r As Long, lastRow As Long
 
+    Dim colItemCode As Long, colIgnore As Long
+    Dim colPackingType As Long, colActive As Long
+    Dim colLocationCode As Long
+
     Set gPacking = CreateObject("Scripting.Dictionary")
     Set gIgnoreItems = CreateObject("Scripting.Dictionary")
     Set gLocations = CreateObject("Scripting.Dictionary")
 
     Set ws = ThisWorkbook.Worksheets("MASTER")
 
-    lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
-    For r = 2 To lastRow
-        If Trim(ws.Cells(r, "A").Value) <> "" Then gPacking(UCase$(Trim(ws.Cells(r, "A").Value))) = True
-    Next r
+    colItemCode = GetColumn(ws, "ItemCode")
+    colIgnore = GetColumn(ws, "Ignore")
+    colPackingType = GetColumn(ws, "PackingType")
+    colActive = GetColumn(ws, "Active")
+    colLocationCode = GetColumn(ws, "LocationCode")
 
-    lastRow = ws.Cells(ws.Rows.Count, "C").End(xlUp).Row
-    For r = 2 To lastRow
-        If Trim(ws.Cells(r, "C").Value) <> "" Then gIgnoreItems(UCase$(Trim(ws.Cells(r, "C").Value))) = True
-    Next r
+    '-------------------------------------------------------
+    ' Ignored Item Codes: ItemCode rows flagged Ignore = "Y"
+    '-------------------------------------------------------
+    If colItemCode > 0 And colIgnore > 0 Then
+        lastRow = ws.Cells(ws.Rows.Count, colItemCode).End(xlUp).Row
+        For r = 2 To lastRow
+            If Trim(ws.Cells(r, colItemCode).Value) <> "" Then
+                If UCase$(Trim(ws.Cells(r, colIgnore).Value)) = "Y" Then
+                    gIgnoreItems(UCase$(Trim(ws.Cells(r, colItemCode).Value))) = True
+                End If
+            End If
+        Next r
+    End If
 
-    lastRow = ws.Cells(ws.Rows.Count, "E").End(xlUp).Row
-    For r = 2 To lastRow
-        If Trim(ws.Cells(r, "E").Value) <> "" Then gLocations(UCase$(Trim(ws.Cells(r, "E").Value))) = True
-    Next r
+    '-------------------------------------------------------
+    ' Valid Packing Types: PackingType rows flagged Active = "Y"
+    '-------------------------------------------------------
+    If colPackingType > 0 And colActive > 0 Then
+        lastRow = ws.Cells(ws.Rows.Count, colPackingType).End(xlUp).Row
+        For r = 2 To lastRow
+            If Trim(ws.Cells(r, colPackingType).Value) <> "" Then
+                If UCase$(Trim(ws.Cells(r, colActive).Value)) = "Y" Then
+                    gPacking(UCase$(Trim(ws.Cells(r, colPackingType).Value))) = True
+                End If
+            End If
+        Next r
+    End If
+
+    '-------------------------------------------------------
+    ' Valid Locations: LocationCode column
+    '-------------------------------------------------------
+    If colLocationCode > 0 Then
+        lastRow = ws.Cells(ws.Rows.Count, colLocationCode).End(xlUp).Row
+        For r = 2 To lastRow
+            If Trim(ws.Cells(r, colLocationCode).Value) <> "" Then
+                gLocations(UCase$(Trim(ws.Cells(r, colLocationCode).Value))) = True
+            End If
+        Next r
+    End If
 End Sub
 
 Public Function IsValidPacking(ByVal PackingType As String) As Boolean
