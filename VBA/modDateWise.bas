@@ -164,7 +164,7 @@ Public Sub GenerateDateWiseStock()
 
     Set dateDeltaDict = CreateObject("Scripting.Dictionary")
     If hasOpeningDate Then
-        dateDeltaDict(earliestOpenDate) = Array(0#, 0#, 0#, 0#, 0#, 0#, 0#, 0#)
+        dateDeltaDict(earliestOpenDate) = DW_ZeroDateDelta()
     End If
 
     ' ==================================================================
@@ -187,7 +187,7 @@ Public Sub GenerateDateWiseStock()
                     dKey = CLng(CDate(movData(r, MOV_DATE)))
                     If (Not hasOpeningDate) Or dKey >= earliestOpenDate Then
                         If Not dateDeltaDict.Exists(dKey) Then
-                            dateDeltaDict(dKey) = Array(0#, 0#, 0#, 0#, 0#, 0#, 0#, 0#)
+                            dateDeltaDict(dKey) = DW_ZeroDateDelta()
                         End If
                         qty = Nz(movData(r, MOV_QTY), 0)
                         tempArr = dateDeltaDict(dKey)
@@ -498,6 +498,19 @@ Private Function DW_OpeningImpact(ByVal TransType As Variant, ByVal Qty As Doubl
         Case Else
             DW_OpeningImpact = Qty   ' Unknown type – pass through signed
     End Select
+End Function
+
+Private Function DW_ZeroDateDelta() As Variant
+
+    Dim arr() As Double
+    Dim i As Long
+
+    ReDim arr(0 To (LOC_COUNT * 2) - 1)
+    For i = 0 To (LOC_COUNT * 2) - 1
+        arr(i) = 0#
+    Next i
+    DW_ZeroDateDelta = arr
+
 End Function
 
 ' ===========================================================================

@@ -88,7 +88,7 @@ Public Sub GenerateCurrentStock()
                     dKey = CLng(CDate(movData(r, MOV_COL_DATE)))
                     If (Not hasOpeningDate) Or dKey >= earliestOpenDate Then
                         If Not moveDict.Exists(dKey) Then
-                            moveDict(dKey) = Array(0#, 0#, 0#, 0#)
+                            moveDict(dKey) = StockZeroDeltas(LOC_COUNT)
                         End If
                         moveArr = moveDict(dKey)
                         moveArr(idx - 1) = moveArr(idx - 1) + Nz(movData(r, MOV_COL_QTY))
@@ -101,7 +101,7 @@ Public Sub GenerateCurrentStock()
         moveCount = moveDict.Count
         If moveCount > 0 Then
             moveKeys = moveDict.Keys
-            Stock_QuickSort moveKeys, 0, moveCount - 1
+            StockQuickSort moveKeys, 0, moveCount - 1
 
             For r = 0 To moveCount - 1
                 moveArr = moveDict(moveKeys(r))
@@ -150,7 +150,7 @@ Private Function LocationIndex(ByVal v As Variant) As Long
 
 End Function
 
-Private Sub Stock_QuickSort(ByRef arr() As Variant, ByVal lo As Long, ByVal hi As Long)
+Private Sub StockQuickSort(ByRef arr() As Variant, ByVal lo As Long, ByVal hi As Long)
 
     Dim pivot As Variant
     Dim i As Long
@@ -175,10 +175,23 @@ Private Sub Stock_QuickSort(ByRef arr() As Variant, ByVal lo As Long, ByVal hi A
         End If
     Loop
 
-    If lo < j Then Stock_QuickSort arr, lo, j
-    If i < hi Then Stock_QuickSort arr, i, hi
+    If lo < j Then StockQuickSort arr, lo, j
+    If i < hi Then StockQuickSort arr, i, hi
 
 End Sub
+
+Private Function StockZeroDeltas(ByVal count As Long) As Variant
+
+    Dim arr() As Double
+    Dim i As Long
+
+    ReDim arr(0 To count - 1)
+    For i = 0 To count - 1
+        arr(i) = 0#
+    Next i
+    StockZeroDeltas = arr
+
+End Function
 
 Private Function GetOpeningImpact(ByVal TransactionType As Variant, ByVal Qty As Double) As Double
 
