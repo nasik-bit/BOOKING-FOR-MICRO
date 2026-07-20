@@ -1,28 +1,132 @@
 Attribute VB_Name = "modMovement"
 Option Explicit
 
-Public Sub GenerateMovement()
+Private Const MOV_COL_COUNT As Long = 15
+Private Const LOG_COL_COUNT As Long = 7
 
+Public Sub GenerateMovement()
+    Dim appState As TAppState
     Dim wsBook As Worksheet
-    Dim wsDel As Worksheet
     Dim wsMov As Worksheet
 
-    Dim LastRowBook As Long
+    Dim colCN As Long
+    Dim colInv As Long
+    Dim colBookDate As Long
+    Dim colTNDate As Long
+    Dim colDNDate As Long
+    Dim colPackets As Long
+    Dim colPacking As Long
+    Dim colItem As Long
+    Dim colSource As Long
+    Dim colDestination As Long
+    Dim colConsignor As Long
+    Dim colConsignee As Long
+
+    Dim readCols As Long
+    Dim lastRw As Long
+    Dim data As Variant
+
+    Dim outData() As Variant
+    Dim outCount As Long
+
+    Dim logData() As Variant
+    Dim logCount As Long
+
+    Dim invDict As Object
     Dim r As Long
 
-    'Load Master
-    Call LoadMaster
+    On Error GoTo ErrHandler
+    BeginApp appState, "Generating MOVEMENT..."
 
-    Set wsBook = ws("BOOKING_DATA")
-    Set wsDel = ws("DELIVERY")
-    Set wsMov = CreateSheet("MOVEMENT")
+    Set wsBook = ws(SHEET_BOOKING)
+    Set wsMov = CreateSheet(SHEET_MOVEMENT)
 
-    ClearData wsMov
+    ResetValidationLog
+    InitializeMovementHeader wsMov
 
-    'Movement Header
+    colCN = GetColumn(wsBook, "Consignment Number")
+    colInv = GetColumnAny(wsBook, Array("Invoice Number", "Invoice No", "Invoice", "Inv No"))
+    colBookDate = GetColumn(wsBook, "Consignment Date")
+    colTNDate = GetColumn(wsBook, "Transport Note Date")
+    colDNDate = GetColumn(wsBook, "DN Date")
+    colPackets = GetColumn(wsBook, "Packets")
+    colPacking = GetColumn(wsBook, "Packing Type")
+    colItem = GetColumn(wsBook, "Item Code")
+    colSource = GetColumn(wsBook, "Source")
+    colDestination = GetColumn(wsBook, "Destination")
+    colConsignor = GetColumn(wsBook, "Consignor")
+    colConsignee = GetColumn(wsBook, "Consignee")
+
+    ValidateBookingHeaders colCN, colInv, colBookDate, colTNDate, colDNDate, _
+                           colPackets, colPacking, colItem, colSource, colDestination, colConsignor, colConsignee
+
+    readCols = WorksheetFunction.Max(colCN, colInv, colBookDate, colTNDate, colDNDate, colPackets, _
+                                     colPacking, colItem, colSource, colDestination, colConsignor, colConsignee)
+
+    lastRw = LastRow(wsBook, colCN)
+    If lastRw < 2 Then
+        EndApp appState
+        MsgBox "Movement Generated Successfully.", vbInformation
+        Exit Sub
+    End If
+
+    data = wsBook.Range(wsBook.Cells(2, 1), wsBook.Cells(lastRw, readCols)).Value2
+
+    ReDim outData(1 To (UBound(data, 1) * 6) + 10, 1 To MOV_COL_COUNT)
+    ReDim logData(1 To (UBound(data, 1) * 12) + 10, 1 To LOG_COL_COUNT)
+
+    Set invDict = CreateObject("Scripting.Dictionary")
+
+    For r = 1 To UBound(data, 1)
+        ProcessBookingRecord data, r, _
+                             colCN, colInv, colBookDate, colTNDate, colDNDate, _
+                             colPackets, colPacking, colItem, colSource, colDestination, colConsignor, colConsignee, _
+                             invDict, _
+                             outData, outCount, _
+                             logData, logCount
+    Next r
+
+    If outCount > 0 Then
+        wsMov.Range("A2").Resize(outCount, MOV_COL_COUNT).Value = FirstRows(outData, outCount, MOV_COL_COUNT)
+        wsMov.Columns("A:A").NumberFormat = "dd-mm-yyyy"
+        wsMov.Columns("H:H").NumberFormat = "0.00"
+        wsMov.Columns("A:O").AutoFit
+    End If
+
+    If logCount > 0 Then
+        AppendValidationRows logData, logCount
+    End If
+
+    EndApp appState
+    MsgBox "Movement Generated Successfully.", vbInformation
+    Exit Sub
+
+ErrHandler:
+    EndApp appState
+    MsgBox "Error in GenerateMovement: " & Err.Description, vbCritical
+End Sub
+
+Private Function FirstRows(ByRef src As Variant, ByVal rowCount As Long, ByVal colCount As Long) As Variant
+    Dim dst() As Variant
+    Dim r As Long
+    Dim c As Long
+
+    ReDim dst(1 To rowCount, 1 To colCount)
+    For r = 1 To rowCount
+        For c = 1 To colCount
+            dst(r, c) = src(r, c)
+        Next c
+    Next r
+
+    FirstRows = dst
+End Function
+
+Private Sub InitializeMovementHeader(ByVal wsMov As Worksheet)
+    wsMov.Cells.Clear
     wsMov.Range("A1:O1").Value = Array( _
         "Event Date", _
         "CN No", _
+        "Invoice Number", _
         "Prefix", _
         "Event", _
         "Source", _
@@ -34,462 +138,189 @@ Public Sub GenerateMovement()
         "Consignor", _
         "Consignee", _
         "Reference", _
-        "Remarks", _
-        "Flow")
-
-    LastRowBook = lastRow(wsBook, GetColumn(wsBook, "Consignment Number"))
-
-    For r = 2 To LastRowBook
-
-        ProcessBookingRow wsBook, wsDel, wsMov, r
-
-    Next r
-
-    MsgBox "Movement Generated Successfully.", vbInformation
-
+        "Remarks")
+    wsMov.Range("A1:O1").Font.Bold = True
 End Sub
-     
-Private Sub ProcessBookingRow(wsBook As Worksheet, _
-                              wsDel As Worksheet, _
-                              wsMov As Worksheet, _
-                              ByVal rw As Long)
 
-    Dim Prefix As String
-    Dim Packing As String
-    Dim ItemCode As String
+Private Sub ValidateBookingHeaders(ByVal colCN As Long, ByVal colInv As Long, ByVal colBookDate As Long, _
+                                   ByVal colTNDate As Long, ByVal colDNDate As Long, ByVal colPackets As Long, _
+                                   ByVal colPacking As Long, ByVal colItem As Long, ByVal colSource As Long, _
+                                   ByVal colDestination As Long, ByVal colConsignor As Long, ByVal colConsignee As Long)
+    If colCN = 0 Then Err.Raise vbObjectError + 1101, "modMovement.ValidateBookingHeaders", "Missing header: Consignment Number"
+    If colInv = 0 Then Err.Raise vbObjectError + 1102, "modMovement.ValidateBookingHeaders", "Missing header: Invoice Number"
+    If colBookDate = 0 Then Err.Raise vbObjectError + 1103, "modMovement.ValidateBookingHeaders", "Missing header: Consignment Date"
+    If colTNDate = 0 Then Err.Raise vbObjectError + 1104, "modMovement.ValidateBookingHeaders", "Missing header: Transport Note Date"
+    If colDNDate = 0 Then Err.Raise vbObjectError + 1105, "modMovement.ValidateBookingHeaders", "Missing header: DN Date"
+    If colPackets = 0 Then Err.Raise vbObjectError + 1106, "modMovement.ValidateBookingHeaders", "Missing header: Packets"
+    If colPacking = 0 Then Err.Raise vbObjectError + 1107, "modMovement.ValidateBookingHeaders", "Missing header: Packing Type"
+    If colItem = 0 Then Err.Raise vbObjectError + 1108, "modMovement.ValidateBookingHeaders", "Missing header: Item Code"
+    If colSource = 0 Then Err.Raise vbObjectError + 1109, "modMovement.ValidateBookingHeaders", "Missing header: Source"
+    If colDestination = 0 Then Err.Raise vbObjectError + 1110, "modMovement.ValidateBookingHeaders", "Missing header: Destination"
+    If colConsignor = 0 Then Err.Raise vbObjectError + 1111, "modMovement.ValidateBookingHeaders", "Missing header: Consignor"
+    If colConsignee = 0 Then Err.Raise vbObjectError + 1112, "modMovement.ValidateBookingHeaders", "Missing header: Consignee"
+End Sub
 
-    Prefix = GetPrefix(wsBook.Cells(rw, GetColumn(wsBook, "Consignment Number")).Value)
+Private Sub ProcessBookingRecord(ByRef data As Variant, ByVal r As Long, _
+                                 ByVal colCN As Long, ByVal colInv As Long, ByVal colBookDate As Long, _
+                                 ByVal colTNDate As Long, ByVal colDNDate As Long, ByVal colPackets As Long, _
+                                 ByVal colPacking As Long, ByVal colItem As Long, ByVal colSource As Long, _
+                                 ByVal colDestination As Long, ByVal colConsignor As Long, ByVal colConsignee As Long, _
+                                 ByRef invDict As Object, _
+                                 ByRef outData As Variant, ByRef outCount As Long, _
+                                 ByRef logData As Variant, ByRef logCount As Long)
+    Dim cn As String
+    Dim invoiceNo As String
+    Dim prefix As String
+    Dim itemCode As String
+    Dim packingType As String
+    Dim sourceLoc As String
+    Dim destLoc As String
+    Dim consignor As String
+    Dim consignee As String
+    Dim packets As Double
 
-    Packing = Trim(wsBook.Cells(rw, GetColumn(wsBook, "Packing Type")).Value)
+    Dim bookingDate As Variant
+    Dim tnDate As Variant
+    Dim dnDate As Variant
 
-    ItemCode = Trim(wsBook.Cells(rw, GetColumn(wsBook, "Item Code")).Value)
+    cn = Trim$(CStr(data(r, colCN)))
+    invoiceNo = Trim$(CStr(data(r, colInv)))
+    prefix = GetPrefix(cn)
+    itemCode = NormalizeText(data(r, colItem))
+    packingType = CanonicalPackingType(data(r, colPacking))
+    sourceLoc = NormalizeLocation(data(r, colSource))
+    destLoc = NormalizeLocation(data(r, colDestination))
+    consignor = Trim$(CStr(data(r, colConsignor)))
+    consignee = Trim$(CStr(data(r, colConsignee)))
+    packets = SafeNumber(data(r, colPackets), 0)
 
-    '-------------------------
-    'Ignore Packing
-    '-------------------------
+    bookingDate = FDate(data(r, colBookDate))
+    tnDate = FDate(data(r, colTNDate))
+    dnDate = FDate(data(r, colDNDate))
 
-    If Not gPacking.Exists(UCase(Packing)) Then Exit Sub
+    If Len(cn) = 0 Then
+        AddValidation logData, logCount, "MOVEMENT", r + 1, cn, invoiceNo, "Invalid Movement", "Blank Consignment Number."
+        Exit Sub
+    End If
 
-    '-------------------------
-    'Ignore Item Code
-    '-------------------------
+    If IsIgnoredItemCode(itemCode) Then Exit Sub
 
-    If gIgnoreItems.Exists(UCase(ItemCode)) Then Exit Sub
+    If Not IsValidPackingType(data(r, colPacking)) Then
+        AddValidation logData, logCount, "MOVEMENT", r + 1, cn, invoiceNo, "Invalid Packing Type", _
+                      "Only Plastic Bin and Empty Bin are allowed."
+        Exit Sub
+    End If
 
-    '-------------------------
-    'Ignore POD
-    '-------------------------
+    If packets <= 0 Then
+        AddValidation logData, logCount, "MOVEMENT", r + 1, cn, invoiceNo, "Invalid Movement", _
+                      "Packets must be greater than zero."
+        Exit Sub
+    End If
 
-    If UCase(wsBook.Cells(rw, GetColumn(wsBook, "CN Status")).Value) = "POD" Then Exit Sub
+    If Len(sourceLoc) = 0 Then
+        AddValidation logData, logCount, "MOVEMENT", r + 1, cn, invoiceNo, "Missing Source", "Source location is blank or invalid."
+        Exit Sub
+    End If
 
-    Select Case Prefix
+    If Len(destLoc) = 0 Then
+        AddValidation logData, logCount, "MOVEMENT", r + 1, cn, invoiceNo, "Missing Destination", "Destination location is blank or invalid."
+        Exit Sub
+    End If
+
+    If Len(invoiceNo) > 0 Then
+        If invDict.Exists(invoiceNo) Then
+            AddValidation logData, logCount, "MOVEMENT", r + 1, cn, invoiceNo, "Duplicate Invoice", "Invoice appears more than once."
+        Else
+            invDict(invoiceNo) = True
+        End If
+    End If
+
+    If IsEmpty(bookingDate) Then
+        AddValidation logData, logCount, "MOVEMENT", r + 1, cn, invoiceNo, "Blank Dates", "Booking date is blank/invalid."
+        Exit Sub
+    End If
+
+    Select Case prefix
+        Case "CPUN"
+            EmitMovement outData, outCount, bookingDate, cn, invoiceNo, prefix, "BOOKING", sourceLoc, destLoc, "CK", -packets, packingType, itemCode, consignor, consignee, "Booking", ""
+            EmitMovement outData, outCount, bookingDate, cn, invoiceNo, prefix, "BOOKING", sourceLoc, destLoc, "PUNE", packets, packingType, itemCode, consignor, consignee, "Booking", ""
+
+            If IsEmpty(tnDate) Then
+                AddValidation logData, logCount, "MOVEMENT", r + 1, cn, invoiceNo, "Blank Dates", "Transport Note Date is blank/invalid."
+            Else
+                EmitMovement outData, outCount, tnDate, cn, invoiceNo, prefix, "TRANSPORT NOTE", sourceLoc, destLoc, "PUNE", -packets, packingType, itemCode, consignor, consignee, "Transport Note Date", ""
+                EmitMovement outData, outCount, NextDate(tnDate), cn, invoiceNo, prefix, "TRANSPORT NOTE +1", sourceLoc, destLoc, "NASHIK", packets, packingType, itemCode, consignor, consignee, "Transport Note Date +1", ""
+            End If
+
+            If IsMahindraConsignee(consignee) Then
+                If IsEmpty(dnDate) Then
+                    AddValidation logData, logCount, "MOVEMENT", r + 1, cn, invoiceNo, "Blank Dates", "Delivery Note Date is blank/invalid for Mahindra consignee."
+                Else
+                    EmitMovement outData, outCount, dnDate, cn, invoiceNo, prefix, "DELIVERY NOTE", sourceLoc, destLoc, "NASHIK", -packets, packingType, itemCode, consignor, consignee, "Delivery Note Date", ""
+                    EmitMovement outData, outCount, dnDate, cn, invoiceNo, prefix, "DELIVERY NOTE", sourceLoc, destLoc, "MAHINDRA", packets, packingType, itemCode, consignor, consignee, "Delivery Note Date", ""
+                End If
+            End If
 
         Case "CNSK"
+            EmitMovement outData, outCount, bookingDate, cn, invoiceNo, prefix, "BOOKING", sourceLoc, destLoc, "MAHINDRA", -packets, packingType, itemCode, consignor, consignee, "Booking", ""
+            EmitMovement outData, outCount, bookingDate, cn, invoiceNo, prefix, "BOOKING", sourceLoc, destLoc, "NASHIK", packets, packingType, itemCode, consignor, consignee, "Booking", ""
 
-            Call ProcessCNSK(wsBook, wsDel, wsMov, rw)
+            If IsEmpty(tnDate) Then
+                AddValidation logData, logCount, "MOVEMENT", r + 1, cn, invoiceNo, "Blank Dates", "Transport Note Date is blank/invalid."
+            Else
+                EmitMovement outData, outCount, tnDate, cn, invoiceNo, prefix, "TRANSPORT NOTE", sourceLoc, destLoc, "NASHIK", -packets, packingType, itemCode, consignor, consignee, "Transport Note Date", ""
+                EmitMovement outData, outCount, NextDate(tnDate), cn, invoiceNo, prefix, "TRANSPORT NOTE +1", sourceLoc, destLoc, "PUNE", packets, packingType, itemCode, consignor, consignee, "Transport Note Date +1", ""
+            End If
 
-        Case "CPUN"
+            If IsEmpty(dnDate) Then
+                AddValidation logData, logCount, "MOVEMENT", r + 1, cn, invoiceNo, "Blank Dates", "Delivery Note Date is blank/invalid."
+            Else
+                EmitMovement outData, outCount, dnDate, cn, invoiceNo, prefix, "DELIVERY NOTE", sourceLoc, destLoc, "PUNE", -packets, packingType, itemCode, consignor, consignee, "Delivery Note Date", ""
+                EmitMovement outData, outCount, dnDate, cn, invoiceNo, prefix, "DELIVERY NOTE", sourceLoc, destLoc, "CK", packets, packingType, itemCode, consignor, consignee, "Delivery Note Date", ""
+            End If
 
-            Call ProcessCPUN(wsBook, wsDel, wsMov, rw)
-
+        Case Else
+            AddValidation logData, logCount, "MOVEMENT", r + 1, cn, invoiceNo, "Invalid Movement", "Unsupported CN prefix. Allowed: CPUN, CNSK."
     End Select
-
 End Sub
 
-
-Private Sub WriteMovement( _
-    ws As Worksheet, _
-    ByVal EventDate As Variant, _
-    ByVal CNNo As String, _
-    ByVal Prefix As String, _
-    ByVal EventName As String, _
-    ByVal Source As String, _
-    ByVal Destination As String, _
-    ByVal Location As String, _
-    ByVal Packets As Double, _
-    ByVal PackingType As String, _
-    ByVal ItemCode As String, _
-    ByVal Consignor As String, _
-    ByVal Consignee As String, _
-    ByVal RefNo As String, _
-    ByVal Remarks As String, _
-    ByVal Flow As String)
-
-    Dim nxt As Long
-
-    nxt = lastRow(ws, 1) + 1
-
-    ws.Cells(nxt, 1).Value = EventDate
-    ws.Cells(nxt, 2).Value = CNNo
-    ws.Cells(nxt, 3).Value = Prefix
-    ws.Cells(nxt, 4).Value = EventName
-    ws.Cells(nxt, 5).Value = Source
-    ws.Cells(nxt, 6).Value = Destination
-    ws.Cells(nxt, 7).Value = Location
-    ws.Cells(nxt, 8).Value = Packets
-    ws.Cells(nxt, 9).Value = PackingType
-    ws.Cells(nxt, 10).Value = ItemCode
-    ws.Cells(nxt, 11).Value = Consignor
-    ws.Cells(nxt, 12).Value = Consignee
-    ws.Cells(nxt, 13).Value = RefNo
-    ws.Cells(nxt, 14).Value = Remarks
-    ws.Cells(nxt, 15).Value = Flow
-
+Private Sub EmitMovement(ByRef outData As Variant, ByRef outCount As Long, _
+                         ByVal eventDate As Variant, ByVal cnNo As String, ByVal invoiceNo As String, _
+                         ByVal prefix As String, ByVal eventName As String, ByVal sourceLoc As String, _
+                         ByVal destLoc As String, ByVal location As String, ByVal packets As Double, _
+                         ByVal packingType As String, ByVal itemCode As String, ByVal consignor As String, _
+                         ByVal consignee As String, ByVal reference As String, ByVal remarks As String)
+    outCount = outCount + 1
+    outData(outCount, 1) = eventDate
+    outData(outCount, 2) = cnNo
+    outData(outCount, 3) = invoiceNo
+    outData(outCount, 4) = prefix
+    outData(outCount, 5) = eventName
+    outData(outCount, 6) = sourceLoc
+    outData(outCount, 7) = destLoc
+    outData(outCount, 8) = location
+    outData(outCount, 9) = packets
+    outData(outCount, 10) = packingType
+    outData(outCount, 11) = itemCode
+    outData(outCount, 12) = consignor
+    outData(outCount, 13) = consignee
+    outData(outCount, 14) = reference
+    outData(outCount, 15) = remarks
 End Sub
 
-Private Sub ProcessCNSK( _
-        wsBook As Worksheet, _
-        wsDel As Worksheet, _
-        wsMov As Worksheet, _
-        ByVal rw As Long)
-
-    Dim CN As String
-    Dim CNDate As Variant
-    Dim TNDate As Variant
-    Dim DNDate As Variant
-
-    Dim Qty As Double
-
-    Dim Packing As String
-    Dim ItemCode As String
-
-    Dim Source As String
-    Dim Destination As String
-    Dim Consignor As String
-    Dim Consignee As String
-
-    CN = wsBook.Cells(rw, GetColumn(wsBook, "Consignment Number")).Value
-    CNDate = wsBook.Cells(rw, GetColumn(wsBook, "Consignment Date")).Value
-    TNDate = wsBook.Cells(rw, GetColumn(wsBook, "Transport Note Date")).Value
-    DNDate = wsBook.Cells(rw, GetColumn(wsBook, "DN Date")).Value
-
-    Qty = Nz(wsBook.Cells(rw, GetColumn(wsBook, "Packets")).Value)
-
-    Packing = wsBook.Cells(rw, GetColumn(wsBook, "Packing Type")).Value
-    ItemCode = wsBook.Cells(rw, GetColumn(wsBook, "Item Code")).Value
-
-    Source = Trim(wsBook.Cells(rw, GetColumn(wsBook, "Source")).Value)
-    Destination = Trim(wsBook.Cells(rw, GetColumn(wsBook, "Destination")).Value)
-    Consignor = Trim(wsBook.Cells(rw, GetColumn(wsBook, "Consignor")).Value)
-    Consignee = Trim(wsBook.Cells(rw, GetColumn(wsBook, "Consignee")).Value)
-
-    '==========================
-    ' BOOKING
-    ' M&M (-)
-    '==========================
-    AddMovementEntry wsMov, _
-        CNDate, _
-        CN, _
-        "CNSK", _
-        "BOOKING", _
-        Source, _
-        Destination, _
-        "M&M", _
-        Qty * -1, _
-        Packing, _
-        ItemCode, _
-        Consignor, _
-        Consignee, _
-        "Booking"
-
-    '==========================
-    ' TN +1
-    ' Pune (+)
-    '==========================
-    If IsDate(TNDate) Then
-
-        AddMovementEntry wsMov, _
-            NextDay(TNDate), _
-            CN, _
-            "CNSK", _
-            "TN+1", _
-            Source, _
-            Destination, _
-            "PUNE", _
-            Qty, _
-            Packing, _
-            ItemCode, _
-            Consignor, _
-            Consignee, _
-            "Transport Note"
-
+Private Sub AddValidation(ByRef logData As Variant, ByRef logCount As Long, _
+                          ByVal stageName As String, ByVal sourceRow As Long, ByVal cnNo As String, _
+                          ByVal invoiceNo As String, ByVal issueName As String, ByVal details As String)
+    If logCount >= UBound(logData, 1) Then
+        Err.Raise vbObjectError + 1113, "modMovement.AddValidation", "Validation buffer overflow. Increase LOG allocation."
     End If
 
-    '==========================
-    ' DN
-    ' Pune (-)
-    '==========================
-    If IsDate(DNDate) Then
-
-        AddMovementEntry wsMov, _
-            DNDate, _
-            CN, _
-            "CNSK", _
-            "DN", _
-            Source, _
-            Destination, _
-            "PUNE", _
-            Qty * -1, _
-            Packing, _
-            ItemCode, _
-            Consignor, _
-            Consignee, _
-            "Delivery Note"
-
-        '==========================
-        ' DN
-        ' CK (+)
-        '==========================
-        AddMovementEntry wsMov, _
-            DNDate, _
-            CN, _
-            "CNSK", _
-            "DN", _
-            Source, _
-            Destination, _
-            "CK", _
-            Qty, _
-            Packing, _
-            ItemCode, _
-            Consignor, _
-            Consignee, _
-            "Delivery Note"
-
-    End If
-
+    logCount = logCount + 1
+    logData(logCount, 1) = stageName
+    logData(logCount, 2) = sourceRow
+    logData(logCount, 3) = cnNo
+    logData(logCount, 4) = invoiceNo
+    logData(logCount, 5) = issueName
+    logData(logCount, 6) = details
+    logData(logCount, 7) = Now
 End Sub
-
-
-'====================================================
-' Process CPUN Movement
-'====================================================
-Private Sub ProcessCPUN( _
-        wsBook As Worksheet, _
-        wsDel As Worksheet, _
-        wsMov As Worksheet, _
-        ByVal rw As Long)
-
-    Dim CN As String
-    Dim CNDate As Variant
-    Dim TNDate As Variant
-    Dim DNDate As Variant
-
-    Dim Qty As Double
-
-    Dim Packing As String
-    Dim ItemCode As String
-
-    Dim Source As String
-    Dim Destination As String
-    Dim Consignor As String
-    Dim Consignee As String
-
-    CN = wsBook.Cells(rw, GetColumn(wsBook, "Consignment Number")).Value
-    CNDate = wsBook.Cells(rw, GetColumn(wsBook, "Consignment Date")).Value
-    TNDate = wsBook.Cells(rw, GetColumn(wsBook, "Transport Note Date")).Value
-    DNDate = wsBook.Cells(rw, GetColumn(wsBook, "DN Date")).Value
-
-    Qty = Nz(wsBook.Cells(rw, GetColumn(wsBook, "Packets")).Value)
-
-    Packing = Trim(wsBook.Cells(rw, GetColumn(wsBook, "Packing Type")).Value)
-    ItemCode = Trim(wsBook.Cells(rw, GetColumn(wsBook, "Item Code")).Value)
-
-    Source = Trim(wsBook.Cells(rw, GetColumn(wsBook, "Source")).Value)
-    Destination = Trim(wsBook.Cells(rw, GetColumn(wsBook, "Destination")).Value)
-    Consignor = Trim(wsBook.Cells(rw, GetColumn(wsBook, "Consignor")).Value)
-    Consignee = Trim(UCase(wsBook.Cells(rw, GetColumn(wsBook, "Consignee")).Value))
-
-    '=========================================
-    ' BOOKING
-    ' CK (-)
-    '=========================================
-    AddMovementEntry wsMov, _
-        CNDate, _
-        CN, _
-        "CPUN", _
-        "BOOKING", _
-        Source, _
-        Destination, _
-        "CK", _
-        Qty * -1, _
-        Packing, _
-        ItemCode, _
-        Consignor, _
-        Consignee, _
-        "Booking"
-
-    '=========================================
-    ' BOOKING
-    ' PUNE (+)
-    '=========================================
-    AddMovementEntry wsMov, _
-        CNDate, _
-        CN, _
-        "CPUN", _
-        "BOOKING", _
-        Source, _
-        Destination, _
-        "PUNE", _
-        Qty, _
-        Packing, _
-        ItemCode, _
-        Consignor, _
-        Consignee, _
-        "Booking"
-
-    '=========================================
-    ' TN +1
-    ' PUNE (-)
-    '=========================================
-    If IsDate(TNDate) Then
-
-        AddMovementEntry wsMov, _
-            NextDay(TNDate), _
-            CN, _
-            "CPUN", _
-            "TN+1", _
-            Source, _
-            Destination, _
-            "PUNE", _
-            Qty * -1, _
-            Packing, _
-            ItemCode, _
-            Consignor, _
-            Consignee, _
-            "Transport Note"
-
-        '=========================================
-        ' TN +1
-        ' NASHIK (+)
-        '=========================================
-        AddMovementEntry wsMov, _
-            NextDay(TNDate), _
-            CN, _
-            "CPUN", _
-            "TN+1", _
-            Source, _
-            Destination, _
-            "NASHIK", _
-            Qty, _
-            Packing, _
-            ItemCode, _
-            Consignor, _
-            Consignee, _
-            "Transport Note"
-
-    End If
-
-    '=========================================
-    ' DN
-    ' NASHIK (-)
-    ' M&M (+)
-    '=========================================
-    If IsDate(DNDate) Then
-
-        If Consignee = "MAHINDRA & MAHINDRA LTD." Then
-
-            AddMovementEntry wsMov, _
-                DNDate, _
-                CN, _
-                "CPUN", _
-                "DN", _
-                Source, _
-                Destination, _
-                "NASHIK", _
-                Qty * -1, _
-                Packing, _
-                ItemCode, _
-                Consignor, _
-                Consignee, _
-                "Delivery Note"
-
-            AddMovementEntry wsMov, _
-                DNDate, _
-                CN, _
-                "CPUN", _
-                "DN", _
-                Source, _
-                Destination, _
-                "M&M", _
-                Qty, _
-                Packing, _
-                ItemCode, _
-                Consignor, _
-                Consignee, _
-                "Delivery Note"
-
-        End If
-
-    End If
-
-End Sub
-
-'=========================================================
-' Find Booking Row by CN Number
-'=========================================================
-Private Function FindBookingRow(wsBook As Worksheet, CNNo As String) As Long
-
-    Dim LastRw As Long
-    Dim r As Long
-    Dim colCN As Long
-
-    colCN = GetColumn(wsBook, "Consignment Number")
-
-    If colCN = 0 Then Exit Function
-
-    LastRw = lastRow(wsBook, colCN)
-
-    For r = 2 To LastRw
-
-        If Trim(UCase(wsBook.Cells(r, colCN).Value)) = Trim(UCase(CNNo)) Then
-            FindBookingRow = r
-            Exit Function
-        End If
-
-    Next r
-
-    FindBookingRow = 0
-
-End Function
-
-'=========================================================
-' Common Procedure to Add One Movement Entry
-'=========================================================
-Private Sub AddMovementEntry( _
-    wsMov As Worksheet, _
-    ByVal EventDate As Variant, _
-    ByVal CNNo As String, _
-    ByVal Prefix As String, _
-    ByVal EventName As String, _
-    ByVal Source As String, _
-    ByVal Destination As String, _
-    ByVal Location As String, _
-    ByVal Packets As Double, _
-    ByVal PackingType As String, _
-    ByVal ItemCode As String, _
-    ByVal Consignor As String, _
-    ByVal Consignee As String, _
-    ByVal Remarks As String)
-
-    WriteMovement wsMov, _
-        EventDate, _
-        CNNo, _
-        Prefix, _
-        EventName, _
-        Source, _
-        Destination, _
-        Location, _
-        Packets, _
-        PackingType, _
-        ItemCode, _
-        Consignor, _
-        Consignee, _
-        "", _
-        Remarks, _
-        Prefix
-
-End Sub
-
-
-
-
