@@ -137,6 +137,21 @@ Public Function FDate(ByVal v As Variant) As Variant
     End If
 End Function
 
+' IsDate() only recognizes true Date variants or date-formatted strings.
+' Bulk range reads via .Value2 (used for fast array processing) return
+' date-formatted cells as plain Doubles, which IsDate() always evaluates
+' to False, silently skipping every row. Use this helper wherever dates
+' are read via .Value2 arrays instead of calling IsDate() directly.
+Public Function IsValidDateValue(ByVal v As Variant) As Boolean
+    If IsDate(v) Then
+        IsValidDateValue = True
+    ElseIf IsNumeric(v) Then
+        IsValidDateValue = (CDbl(v) > 0)
+    Else
+        IsValidDateValue = False
+    End If
+End Function
+
 Public Function FindDeliveryRow(CNNo As String) As Long
     Dim ws As Worksheet
     Dim f As Range

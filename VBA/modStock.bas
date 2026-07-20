@@ -7,13 +7,6 @@ Public Sub GenerateCurrentStock()
 
     Const LOC_COUNT As Long = 4
     Const OUT_ROW_COUNT As Long = 5
-    Const MOV_COL_DATE As Long = 1
-    Const MOV_COL_LOCATION As Long = 7
-    Const MOV_COL_QTY As Long = 8
-    Const OPEN_COL_DATE As Long = 1
-    Const OPEN_COL_TYPE As Long = 2
-    Const OPEN_COL_LOCATION As Long = 3
-    Const OPEN_COL_QTY As Long = 4
 
     Dim wsMov As Worksheet
     Dim wsOpen As Worksheet
@@ -40,21 +33,52 @@ Public Sub GenerateCurrentStock()
     Dim moveArr As Variant
     Dim i As Long
 
+    Dim MOV_COL_DATE As Long
+    Dim MOV_COL_LOCATION As Long
+    Dim MOV_COL_QTY As Long
+    Dim OPEN_COL_DATE As Long
+    Dim OPEN_COL_TYPE As Long
+    Dim OPEN_COL_LOCATION As Long
+    Dim OPEN_COL_QTY As Long
+    Dim movReadCols As Long
+    Dim openReadCols As Long
+
     Set wsMov = ThisWorkbook.Worksheets(SHEET_MOVEMENT)
     Set wsOpen = ThisWorkbook.Worksheets(SHEET_OPENING)
     Set wsStock = CreateSheet(SHEET_STOCK)
     earliestOpenDate = STOCK_MAX_LONG
 
+    MOV_COL_DATE = GetColumn(wsMov, "Event Date")
+    MOV_COL_LOCATION = GetColumn(wsMov, "Location")
+    MOV_COL_QTY = GetColumn(wsMov, "Packets")
+    movReadCols = WorksheetFunction.Max(MOV_COL_DATE, MOV_COL_LOCATION, MOV_COL_QTY)
+
+    OPEN_COL_DATE = GetColumn(wsOpen, "Date")
+    OPEN_COL_TYPE = GetColumn(wsOpen, "Transaction Type")
+    OPEN_COL_LOCATION = GetColumn(wsOpen, "Location")
+    OPEN_COL_QTY = GetColumn(wsOpen, "Qty")
+    openReadCols = WorksheetFunction.Max(OPEN_COL_DATE, OPEN_COL_TYPE, OPEN_COL_LOCATION, OPEN_COL_QTY)
+
+    If MOV_COL_DATE = 0 Or MOV_COL_LOCATION = 0 Or MOV_COL_QTY = 0 Then
+        Err.Raise vbObjectError + 1, "modStock.GenerateCurrentStock", _
+            "MOVEMENT sheet is missing one of the required headers: Event Date, Location, Packets."
+    End If
+
+    If OPEN_COL_DATE = 0 Or OPEN_COL_TYPE = 0 Or OPEN_COL_LOCATION = 0 Or OPEN_COL_QTY = 0 Then
+        Err.Raise vbObjectError + 2, "modStock.GenerateCurrentStock", _
+            "OPENING_BALANCE sheet is missing one of the required headers: Date, Transaction Type, Location, Qty."
+    End If
+
     wsStock.Cells.Clear
     wsStock.Range("A1:B1").Value = Array("Location", "Current Stock")
 
-    openLast = LastRow(wsOpen, 1)
+    openLast = LastRow(wsOpen, OPEN_COL_DATE)
     If openLast >= 2 Then
-        openData = wsOpen.Range("A2:D" & openLast).Value2
+        openData = wsOpen.Range(wsOpen.Cells(2, 1), wsOpen.Cells(openLast, openReadCols)).Value2
 
         For r = 1 To UBound(openData, 1)
             idx = LocationIndex(openData(r, OPEN_COL_LOCATION))
-            If idx > 0 And IsDate(openData(r, OPEN_COL_DATE)) Then
+            If idx > 0 And IsValidDateValue(openData(r, OPEN_COL_DATE)) Then
                 dKey = CLng(CDate(openData(r, OPEN_COL_DATE)))
                 If Not hasOpeningDate Or dKey < earliestOpenDate Then
                     earliestOpenDate = dKey
@@ -66,7 +90,7 @@ Public Sub GenerateCurrentStock()
         For r = 1 To UBound(openData, 1)
             idx = LocationIndex(openData(r, OPEN_COL_LOCATION))
             If idx > 0 And hasOpeningDate Then
-                If IsDate(openData(r, OPEN_COL_DATE)) Then
+                If IsValidDateValue(openData(r, OPEN_COL_DATE)) Then
                     dKey = CLng(CDate(openData(r, OPEN_COL_DATE)))
                 Else
                     dKey = 0
@@ -79,13 +103,13 @@ Public Sub GenerateCurrentStock()
         Next r
     End If
 
-    movLast = LastRow(wsMov, 1)
+    movLast = LastRow(wsMov, MOV_COL_DATE)
     If movLast >= 2 Then
-        movData = wsMov.Range("A2:H" & movLast).Value2
+        movData = wsMov.Range(wsMov.Cells(2, 1), wsMov.Cells(movLast, movReadCols)).Value2
         Set moveDict = CreateObject("Scripting.Dictionary")
 
         For r = 1 To UBound(movData, 1)
-            If IsDate(movData(r, MOV_COL_DATE)) Then
+            If IsValidDateValue(movData(r, MOV_COL_DATE)) Then
                 idx = LocationIndex(movData(r, MOV_COL_LOCATION))
                 If idx > 0 Then
                     dKey = CLng(CDate(movData(r, MOV_COL_DATE)))
