@@ -5,11 +5,13 @@ Public Sub GenerateCurrentStock()
 
     Const LOC_COUNT As Long = 4
     Const OUT_ROW_COUNT As Long = 5
-    Const MOV_COL_LOCATION As Long = 1
-    Const MOV_COL_QTY As Long = 2
-    Const OPEN_COL_TYPE As Long = 1
-    Const OPEN_COL_LOCATION As Long = 2
-    Const OPEN_COL_QTY As Long = 3
+    Const MOV_COL_DATE As Long = 1
+    Const MOV_COL_LOCATION As Long = 7
+    Const MOV_COL_QTY As Long = 8
+    Const OPEN_COL_DATE As Long = 1
+    Const OPEN_COL_TYPE As Long = 2
+    Const OPEN_COL_LOCATION As Long = 3
+    Const OPEN_COL_QTY As Long = 4
 
     Dim wsMov As Worksheet
     Dim wsOpen As Worksheet
@@ -24,9 +26,17 @@ Public Sub GenerateCurrentStock()
 
     Dim totals(1 To LOC_COUNT) As Double
     Dim grandTotal As Double
+    Dim earliestOpenDate As Long
+    Dim hasOpeningDate As Boolean
 
     Dim r As Long
     Dim idx As Long
+    Dim dKey As Long
+    Dim moveDict As Object
+    Dim moveKeys() As Variant
+    Dim moveCount As Long
+    Dim moveArr As Variant
+    Dim i As Long
 
     Set wsMov = ThisWorkbook.Worksheets(SHEET_MOVEMENT)
     Set wsOpen = ThisWorkbook.Worksheets(SHEET_OPENING)
@@ -35,26 +45,71 @@ Public Sub GenerateCurrentStock()
     wsStock.Cells.Clear
     wsStock.Range("A1:B1").Value = Array("Location", "Current Stock")
 
-    movLast = LastRow(wsMov, 1)
-    If movLast >= 2 Then
-        movData = wsMov.Range("G2:H" & movLast).Value2
-
-        For r = 1 To UBound(movData, 1)
-            idx = LocationIndex(movData(r, MOV_COL_LOCATION))
-            If idx > 0 Then totals(idx) = totals(idx) + Nz(movData(r, MOV_COL_QTY))
-        Next r
-    End If
-
     openLast = LastRow(wsOpen, 1)
     If openLast >= 2 Then
-        openData = wsOpen.Range("B2:D" & openLast).Value2
+        openData = wsOpen.Range("A2:D" & openLast).Value2
 
         For r = 1 To UBound(openData, 1)
             idx = LocationIndex(openData(r, OPEN_COL_LOCATION))
-            If idx > 0 Then
-                totals(idx) = totals(idx) + GetOpeningImpact(openData(r, OPEN_COL_TYPE), Nz(openData(r, OPEN_COL_QTY)))
+            If idx > 0 And IsDate(openData(r, OPEN_COL_DATE)) Then
+                dKey = CLng(CDate(openData(r, OPEN_COL_DATE)))
+                If Not hasOpeningDate Or dKey < earliestOpenDate Then
+                    earliestOpenDate = dKey
+                    hasOpeningDate = True
+                End If
             End If
         Next r
+
+        For r = 1 To UBound(openData, 1)
+            idx = LocationIndex(openData(r, OPEN_COL_LOCATION))
+            If idx > 0 And hasOpeningDate Then
+                If IsDate(openData(r, OPEN_COL_DATE)) Then
+                    dKey = CLng(CDate(openData(r, OPEN_COL_DATE)))
+                Else
+                    dKey = 0
+                End If
+
+                If dKey = earliestOpenDate Then
+                totals(idx) = totals(idx) + GetOpeningImpact(openData(r, OPEN_COL_TYPE), Nz(openData(r, OPEN_COL_QTY)))
+                End If
+            End If
+        Next r
+    End If
+
+    movLast = LastRow(wsMov, 1)
+    If movLast >= 2 Then
+        movData = wsMov.Range("A2:H" & movLast).Value2
+        Set moveDict = CreateObject("Scripting.Dictionary")
+
+        For r = 1 To UBound(movData, 1)
+            If IsDate(movData(r, MOV_COL_DATE)) Then
+                idx = LocationIndex(movData(r, MOV_COL_LOCATION))
+                If idx > 0 Then
+                    dKey = CLng(CDate(movData(r, MOV_COL_DATE)))
+                    If (Not hasOpeningDate) Or dKey >= earliestOpenDate Then
+                        If Not moveDict.Exists(dKey) Then
+                            moveDict(dKey) = Array(0#, 0#, 0#, 0#)
+                        End If
+                        moveArr = moveDict(dKey)
+                        moveArr(idx - 1) = moveArr(idx - 1) + Nz(movData(r, MOV_COL_QTY))
+                        moveDict(dKey) = moveArr
+                    End If
+                End If
+            End If
+        Next r
+
+        moveCount = moveDict.Count
+        If moveCount > 0 Then
+            moveKeys = moveDict.Keys
+            Stock_QuickSort moveKeys, 0, moveCount - 1
+
+            For r = 0 To moveCount - 1
+                moveArr = moveDict(moveKeys(r))
+                For i = 1 To LOC_COUNT
+                    totals(i) = totals(i) + moveArr(i - 1)
+                Next i
+            Next r
+        End If
     End If
 
     outData(1, 1) = "M&M"
@@ -94,6 +149,36 @@ Private Function LocationIndex(ByVal v As Variant) As Long
     End Select
 
 End Function
+
+Private Sub Stock_QuickSort(ByRef arr() As Variant, ByVal lo As Long, ByVal hi As Long)
+
+    Dim pivot As Variant
+    Dim i As Long
+    Dim j As Long
+    Dim tmp As Variant
+
+    If lo >= hi Then Exit Sub
+
+    pivot = arr((lo + hi) \ 2)
+    i = lo
+    j = hi
+
+    Do While i <= j
+        Do While arr(i) < pivot: i = i + 1: Loop
+        Do While arr(j) > pivot: j = j - 1: Loop
+        If i <= j Then
+            tmp = arr(i)
+            arr(i) = arr(j)
+            arr(j) = tmp
+            i = i + 1
+            j = j - 1
+        End If
+    Loop
+
+    If lo < j Then Stock_QuickSort arr, lo, j
+    If i < hi Then Stock_QuickSort arr, i, hi
+
+End Sub
 
 Private Function GetOpeningImpact(ByVal TransactionType As Variant, ByVal Qty As Double) As Double
 

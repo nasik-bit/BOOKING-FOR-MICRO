@@ -46,10 +46,11 @@ Private Const MOV_DATE As Long = 1   ' Col A  Event Date
 Private Const MOV_LOC  As Long = 7   ' Col G  Location
 Private Const MOV_QTY  As Long = 8   ' Col H  Packets (positive = IN, negative = OUT)
 
-' --- OPENING_BALANCE column offsets (relative to B2:D bulk read) ---------
-Private Const OPEN_TYPE As Long = 1  ' Col B  Transaction Type
-Private Const OPEN_LOC  As Long = 2  ' Col C  Location
-Private Const OPEN_QTY  As Long = 3  ' Col D  Quantity
+' --- OPENING_BALANCE column offsets (relative to A2:D bulk read) ---------
+Private Const OPEN_DATE As Long = 1  ' Col A  Date
+Private Const OPEN_TYPE As Long = 2  ' Col B  Transaction Type
+Private Const OPEN_LOC  As Long = 3  ' Col C  Location
+Private Const OPEN_QTY  As Long = 4  ' Col D  Quantity
 
 ' --- Location constants (1-based) ----------------------------------------
 Private Const LOC_COUNT As Long = 4  ' M&M=1  NASHIK=2  PUNE=3  CK=4
@@ -104,6 +105,8 @@ Public Sub GenerateDateWiseStock()
     Dim dKey    As Long
     Dim tempArr As Variant
     Dim qty     As Double
+    Dim hasOpeningDate As Boolean
+    Dim earliestOpenDate As Long
 
     ' Per-date accumulators (reused on each date iteration)
     Dim locOpening(1 To LOC_COUNT) As Double
@@ -127,57 +130,79 @@ Public Sub GenerateDateWiseStock()
     wsDW.Cells.Clear   ' Wipe content AND formatting from any prior run
 
     ' ==================================================================
-    ' Step 1  –  Seed running totals from OPENING_BALANCE
-    '            Sign rules mirror modStock.GetOpeningImpact (unchanged).
+    ' Step 1  –  Seed running totals from earliest OPENING_BALANCE date only
     ' ==================================================================
     openLast = LastRow(wsOpen, 1)
     If openLast >= 2 Then
-        openData = wsOpen.Range("B2:D" & openLast).Value2
+        openData = wsOpen.Range("A2:D" & openLast).Value2
         For r = 1 To UBound(openData, 1)
             idx = DW_LocationIndex(openData(r, OPEN_LOC))
-            If idx > 0 Then
-                runTotals(idx) = runTotals(idx) + _
-                    DW_OpeningImpact(openData(r, OPEN_TYPE), Nz(openData(r, OPEN_QTY)))
+            If idx > 0 And IsDate(openData(r, OPEN_DATE)) Then
+                dKey = CLng(CDate(openData(r, OPEN_DATE)))
+                If Not hasOpeningDate Or dKey < earliestOpenDate Then
+                    earliestOpenDate = dKey
+                    hasOpeningDate = True
+                End If
             End If
         Next r
+
+        For r = 1 To UBound(openData, 1)
+            idx = DW_LocationIndex(openData(r, OPEN_LOC))
+            If idx > 0 And hasOpeningDate Then
+                If IsDate(openData(r, OPEN_DATE)) Then
+                    dKey = CLng(CDate(openData(r, OPEN_DATE)))
+                Else
+                    dKey = 0
+                End If
+                If dKey = earliestOpenDate Then
+                runTotals(idx) = runTotals(idx) + _
+                    DW_OpeningImpact(openData(r, OPEN_TYPE), Nz(openData(r, OPEN_QTY)))
+                End If
+            End If
+        Next r
+    End If
+
+    Set dateDeltaDict = CreateObject("Scripting.Dictionary")
+    If hasOpeningDate Then
+        dateDeltaDict(earliestOpenDate) = Array(0#, 0#, 0#, 0#, 0#, 0#, 0#, 0#)
     End If
 
     ' ==================================================================
     ' Step 2  –  Read MOVEMENT into bulk array
     ' ==================================================================
     movLast = LastRow(wsMov, 1)
-    If movLast < 2 Then GoTo WriteOutput
+    If movLast >= 2 Then
+        movData = wsMov.Range("A2:H" & movLast).Value2
 
-    movData = wsMov.Range("A2:H" & movLast).Value2
-
-    ' ==================================================================
-    ' Step 3  –  Build per-date In / Out delta dictionary (O(n) single pass)
-    '
-    '   Positive Packets value  →  IN  (slot locOff)
-    '   Negative Packets value  →  OUT (slot locOff + 1, stored as Abs)
-    ' ==================================================================
-    Set dateDeltaDict = CreateObject("Scripting.Dictionary")
-
-    For r = 1 To UBound(movData, 1)
-        If IsDate(movData(r, MOV_DATE)) Then               ' Rule 9: skip blank rows
-            idx = DW_LocationIndex(movData(r, MOV_LOC))
-            If idx > 0 Then
-                dKey = CLng(CDate(movData(r, MOV_DATE)))
-                If Not dateDeltaDict.Exists(dKey) Then
-                    dateDeltaDict(dKey) = Array(0#, 0#, 0#, 0#, 0#, 0#, 0#, 0#)
+        ' ==================================================================
+        ' Step 3  –  Build per-date In / Out delta dictionary (O(n) single pass)
+        '
+        '   Positive Packets value  →  IN  (slot locOff)
+        '   Negative Packets value  →  OUT (slot locOff + 1, stored as Abs)
+        ' ==================================================================
+        For r = 1 To UBound(movData, 1)
+            If IsDate(movData(r, MOV_DATE)) Then               ' Rule 9: skip blank rows
+                idx = DW_LocationIndex(movData(r, MOV_LOC))
+                If idx > 0 Then
+                    dKey = CLng(CDate(movData(r, MOV_DATE)))
+                    If (Not hasOpeningDate) Or dKey >= earliestOpenDate Then
+                        If Not dateDeltaDict.Exists(dKey) Then
+                            dateDeltaDict(dKey) = Array(0#, 0#, 0#, 0#, 0#, 0#, 0#, 0#)
+                        End If
+                        qty = Nz(movData(r, MOV_QTY), 0)
+                        tempArr = dateDeltaDict(dKey)
+                        locOff = (idx - 1) * 2              ' 0-based In/Out slot pair
+                        If qty >= 0 Then
+                            tempArr(locOff) = tempArr(locOff) + qty       ' IN
+                        Else
+                            tempArr(locOff + 1) = tempArr(locOff + 1) + Abs(qty)  ' OUT
+                        End If
+                        dateDeltaDict(dKey) = tempArr         ' Write back (arrays are by value)
+                    End If
                 End If
-                qty     = Nz(movData(r, MOV_QTY), 0)
-                tempArr = dateDeltaDict(dKey)
-                locOff  = (idx - 1) * 2              ' 0-based In/Out slot pair
-                If qty >= 0 Then
-                    tempArr(locOff)     = tempArr(locOff)     + qty       ' IN
-                Else
-                    tempArr(locOff + 1) = tempArr(locOff + 1) + Abs(qty)  ' OUT
-                End If
-                dateDeltaDict(dKey) = tempArr         ' Write back (arrays are by value)
             End If
-        End If
-    Next r
+        Next r
+    End If
 
     dateCount = dateDeltaDict.Count
     If dateCount = 0 Then GoTo WriteOutput
