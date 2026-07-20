@@ -1,234 +1,143 @@
 Attribute VB_Name = "modStock"
 Option Explicit
 
-Private Const STOCK_MAX_LONG As Long = 2147483647
+Private Const OUT_COLS As Long = 6
 
 Public Sub GenerateCurrentStock()
-
-    Const LOC_COUNT As Long = 4
-    Const OUT_ROW_COUNT As Long = 5
-
-    Dim wsMov As Worksheet
-    Dim wsOpen As Worksheet
+    Dim appState As TAppState
+    Dim wsDW As Worksheet
     Dim wsStock As Worksheet
 
-    Dim movLast As Long
-    Dim openLast As Long
+    Dim colDate As Long
+    Dim colItem As Long
+    Dim colLoc As Long
+    Dim colClose As Long
+    Dim readCols As Long
+    Dim lastRw As Long
 
-    Dim movData As Variant
-    Dim openData As Variant
-    Dim outData(1 To OUT_ROW_COUNT, 1 To 2) As Variant
-
-    Dim totals(1 To LOC_COUNT) As Double
-    Dim grandTotal As Double
-    Dim earliestOpenDate As Long
-    Dim hasOpeningDate As Boolean
+    Dim data As Variant
+    Dim latestDateDict As Object
+    Dim latestQtyDict As Object
+    Dim itemAggDict As Object
 
     Dim r As Long
-    Dim idx As Long
-    Dim dKey As Long
-    Dim moveDict As Object
-    Dim moveKeys() As Variant
-    Dim moveCount As Long
-    Dim moveArr As Variant
+    Dim dateKey As Long
+    Dim itemCode As String
+    Dim locationCode As String
+    Dim closeQty As Double
+    Dim keyIL As Variant
+
+    Dim itemKeys() As Variant
+    Dim outData() As Variant
+    Dim outRow As Long
     Dim i As Long
+    Dim rowArr As Variant
 
-    Dim MOV_COL_DATE As Long
-    Dim MOV_COL_LOCATION As Long
-    Dim MOV_COL_QTY As Long
-    Dim OPEN_COL_DATE As Long
-    Dim OPEN_COL_TYPE As Long
-    Dim OPEN_COL_LOCATION As Long
-    Dim OPEN_COL_QTY As Long
-    Dim movReadCols As Long
-    Dim openReadCols As Long
+    On Error GoTo ErrHandler
+    BeginApp appState, "Generating CURRENT_STOCK..."
 
-    Set wsMov = ThisWorkbook.Worksheets(SHEET_MOVEMENT)
-    Set wsOpen = ThisWorkbook.Worksheets(SHEET_OPENING)
+    Set wsDW = ws(SHEET_DATE_WISE)
     Set wsStock = CreateSheet(SHEET_STOCK)
-    earliestOpenDate = STOCK_MAX_LONG
-
-    MOV_COL_DATE = GetColumn(wsMov, "Event Date")
-    MOV_COL_LOCATION = GetColumn(wsMov, "Location")
-    MOV_COL_QTY = GetColumn(wsMov, "Packets")
-    movReadCols = WorksheetFunction.Max(MOV_COL_DATE, MOV_COL_LOCATION, MOV_COL_QTY)
-
-    OPEN_COL_DATE = GetColumn(wsOpen, "Date")
-    OPEN_COL_TYPE = GetColumn(wsOpen, "Transaction Type")
-    OPEN_COL_LOCATION = GetColumn(wsOpen, "Location")
-    OPEN_COL_QTY = GetColumn(wsOpen, "Qty")
-    openReadCols = WorksheetFunction.Max(OPEN_COL_DATE, OPEN_COL_TYPE, OPEN_COL_LOCATION, OPEN_COL_QTY)
-
-    If MOV_COL_DATE = 0 Or MOV_COL_LOCATION = 0 Or MOV_COL_QTY = 0 Then
-        Err.Raise vbObjectError + 1, "modStock.GenerateCurrentStock", _
-            "MOVEMENT sheet is missing one of the required headers: Event Date, Location, Packets."
-    End If
-
-    If OPEN_COL_DATE = 0 Or OPEN_COL_TYPE = 0 Or OPEN_COL_LOCATION = 0 Or OPEN_COL_QTY = 0 Then
-        Err.Raise vbObjectError + 2, "modStock.GenerateCurrentStock", _
-            "OPENING_BALANCE sheet is missing one of the required headers: Date, Transaction Type, Location, Qty."
-    End If
-
     wsStock.Cells.Clear
-    wsStock.Range("A1:B1").Value = Array("Location", "Current Stock")
+    wsStock.Range("A1:F1").Value = Array("Item Code", "CK", "PUNE", "NASHIK", "MAHINDRA", "Total Packets")
+    wsStock.Range("A1:F1").Font.Bold = True
 
-    openLast = LastRow(wsOpen, OPEN_COL_DATE)
-    If openLast >= 2 Then
-        openData = wsOpen.Range(wsOpen.Cells(2, 1), wsOpen.Cells(openLast, openReadCols)).Value2
+    colDate = GetColumn(wsDW, "Date")
+    colItem = GetColumn(wsDW, "Item Code")
+    colLoc = GetColumn(wsDW, "Location")
+    colClose = GetColumn(wsDW, "Closing Packets")
 
-        For r = 1 To UBound(openData, 1)
-            idx = LocationIndex(openData(r, OPEN_COL_LOCATION))
-            If idx > 0 And IsValidDateValue(openData(r, OPEN_COL_DATE)) Then
-                dKey = CLng(CDate(openData(r, OPEN_COL_DATE)))
-                If Not hasOpeningDate Or dKey < earliestOpenDate Then
-                    earliestOpenDate = dKey
-                    hasOpeningDate = True
-                End If
-            End If
-        Next r
-
-        For r = 1 To UBound(openData, 1)
-            idx = LocationIndex(openData(r, OPEN_COL_LOCATION))
-            If idx > 0 And hasOpeningDate Then
-                If IsValidDateValue(openData(r, OPEN_COL_DATE)) Then
-                    dKey = CLng(CDate(openData(r, OPEN_COL_DATE)))
-                Else
-                    dKey = 0
-                End If
-
-                If dKey = earliestOpenDate Then
-                    totals(idx) = totals(idx) + GetOpeningImpact(openData(r, OPEN_COL_TYPE), Nz(openData(r, OPEN_COL_QTY)))
-                End If
-            End If
-        Next r
+    If colDate = 0 Or colItem = 0 Or colLoc = 0 Or colClose = 0 Then
+        Err.Raise vbObjectError + 1301, "modStock.GenerateCurrentStock", _
+                  "DATE_WISE_STOCK requires headers: Date, Item Code, Location, Closing Packets."
     End If
 
-    movLast = LastRow(wsMov, MOV_COL_DATE)
-    If movLast >= 2 Then
-        movData = wsMov.Range(wsMov.Cells(2, 1), wsMov.Cells(movLast, movReadCols)).Value2
-        Set moveDict = CreateObject("Scripting.Dictionary")
+    lastRw = LastRow(wsDW, colDate)
+    If lastRw < 2 Then
+        EndApp appState
+        MsgBox "Current Stock Generated Successfully.", vbInformation
+        Exit Sub
+    End If
 
-        For r = 1 To UBound(movData, 1)
-            If IsValidDateValue(movData(r, MOV_COL_DATE)) Then
-                idx = LocationIndex(movData(r, MOV_COL_LOCATION))
-                If idx > 0 Then
-                    dKey = CLng(CDate(movData(r, MOV_COL_DATE)))
-                    If (Not hasOpeningDate) Or dKey >= earliestOpenDate Then
-                        If Not moveDict.Exists(dKey) Then
-                            moveDict(dKey) = StockZeroDeltas(LOC_COUNT)
-                        End If
-                        moveArr = moveDict(dKey)
-                        moveArr(idx - 1) = moveArr(idx - 1) + Nz(movData(r, MOV_COL_QTY))
-                        moveDict(dKey) = moveArr
-                    End If
-                End If
-            End If
-        Next r
+    readCols = WorksheetFunction.Max(colDate, colItem, colLoc, colClose)
+    data = wsDW.Range(wsDW.Cells(2, 1), wsDW.Cells(lastRw, readCols)).Value2
 
-        moveCount = moveDict.Count
-        If moveCount > 0 Then
-            moveKeys = moveDict.Keys
-            StockQuickSort moveKeys, 0, moveCount - 1
+    Set latestDateDict = CreateObject("Scripting.Dictionary")
+    Set latestQtyDict = CreateObject("Scripting.Dictionary")
+    Set itemAggDict = CreateObject("Scripting.Dictionary")
 
-            For r = 0 To moveCount - 1
-                moveArr = moveDict(moveKeys(r))
-                For i = 1 To LOC_COUNT
-                    totals(i) = totals(i) + moveArr(i - 1)
-                Next i
-            Next r
+    For r = 1 To UBound(data, 1)
+        dateKey = DateKey(data(r, colDate))
+        itemCode = NormalizeText(data(r, colItem))
+        locationCode = NormalizeLocation(data(r, colLoc))
+        closeQty = SafeNumber(data(r, colClose), 0)
+
+        If dateKey = 0 Then GoTo NextRow
+        If Len(itemCode) = 0 Then GoTo NextRow
+        If Len(locationCode) = 0 Then GoTo NextRow
+
+        keyIL = itemCode & "|" & locationCode
+        If Not latestDateDict.Exists(keyIL) Then
+            latestDateDict(keyIL) = dateKey
+            latestQtyDict(keyIL) = closeQty
+        ElseIf dateKey >= CLng(latestDateDict(keyIL)) Then
+            latestDateDict(keyIL) = dateKey
+            latestQtyDict(keyIL) = closeQty
         End If
+NextRow:
+    Next r
+
+    For Each keyIL In latestQtyDict.Keys
+        itemCode = Split(CStr(keyIL), "|")(0)
+        locationCode = Split(CStr(keyIL), "|")(1)
+        closeQty = latestQtyDict(keyIL)
+
+        If Not itemAggDict.Exists(itemCode) Then
+            itemAggDict(itemCode) = Array(0#, 0#, 0#, 0#) ' CK, PUNE, NASHIK, MAHINDRA
+        End If
+
+        rowArr = itemAggDict(itemCode)
+        Select Case locationCode
+            Case "CK": rowArr(0) = closeQty
+            Case "PUNE": rowArr(1) = closeQty
+            Case "NASHIK": rowArr(2) = closeQty
+            Case "MAHINDRA": rowArr(3) = closeQty
+        End Select
+        itemAggDict(itemCode) = rowArr
+    Next keyIL
+
+    If itemAggDict.Count = 0 Then
+        EndApp appState
+        MsgBox "Current Stock Generated Successfully.", vbInformation
+        Exit Sub
     End If
 
-    outData(1, 1) = "M&M"
-    outData(2, 1) = "NASHIK"
-    outData(3, 1) = "PUNE"
-    outData(4, 1) = "CK"
-    outData(5, 1) = "Grand Total"
+    itemKeys = itemAggDict.Keys
+    QuickSortVariant itemKeys, 0, itemAggDict.Count - 1
 
-    outData(1, 2) = totals(1)
-    outData(2, 2) = totals(2)
-    outData(3, 2) = totals(3)
-    outData(4, 2) = totals(4)
+    ReDim outData(1 To itemAggDict.Count, 1 To OUT_COLS)
+    outRow = 0
 
-    grandTotal = totals(1) + totals(2) + totals(3) + totals(4)
-    outData(5, 2) = grandTotal
+    For i = 0 To UBound(itemKeys)
+        outRow = outRow + 1
+        rowArr = itemAggDict(itemKeys(i))
+        outData(outRow, 1) = itemKeys(i)
+        outData(outRow, 2) = rowArr(0)
+        outData(outRow, 3) = rowArr(1)
+        outData(outRow, 4) = rowArr(2)
+        outData(outRow, 5) = rowArr(3)
+        outData(outRow, 6) = rowArr(0) + rowArr(1) + rowArr(2) + rowArr(3)
+    Next i
 
-    wsStock.Range("A2:B6").Value = outData
-    wsStock.Columns("A:B").AutoFit
+    wsStock.Range("A2").Resize(outRow, OUT_COLS).Value = outData
+    wsStock.Columns("B:F").NumberFormat = "0.00"
+    wsStock.Columns("A:F").AutoFit
 
+    EndApp appState
     MsgBox "Current Stock Generated Successfully.", vbInformation
+    Exit Sub
 
+ErrHandler:
+    EndApp appState
+    MsgBox "Error in GenerateCurrentStock: " & Err.Description, vbCritical
 End Sub
-
-Private Function LocationIndex(ByVal v As Variant) As Long
-
-    Select Case UCase$(Trim$(CStr(v)))
-        Case "M&M"
-            LocationIndex = 1
-        Case "NASHIK"
-            LocationIndex = 2
-        Case "PUNE"
-            LocationIndex = 3
-        Case "CK"
-            LocationIndex = 4
-        Case Else
-            LocationIndex = 0
-    End Select
-
-End Function
-
-Private Sub StockQuickSort(ByRef arr() As Variant, ByVal lo As Long, ByVal hi As Long)
-
-    Dim pivot As Variant
-    Dim i As Long
-    Dim j As Long
-    Dim tmp As Variant
-
-    If lo >= hi Then Exit Sub
-
-    pivot = arr((lo + hi) \ 2)
-    i = lo
-    j = hi
-
-    Do While i <= j
-        Do While arr(i) < pivot
-            i = i + 1
-        Loop
-        Do While arr(j) > pivot
-            j = j - 1
-        Loop
-        If i <= j Then
-            tmp = arr(i)
-            arr(i) = arr(j)
-            arr(j) = tmp
-            i = i + 1
-            j = j - 1
-        End If
-    Loop
-
-    If lo < j Then StockQuickSort arr, lo, j
-    If i < hi Then StockQuickSort arr, i, hi
-
-End Sub
-
-Private Function StockZeroDeltas(ByVal count As Long) As Variant
-
-    Dim arr() As Double
-
-    ReDim arr(0 To count - 1)
-    StockZeroDeltas = arr
-
-End Function
-
-Private Function GetOpeningImpact(ByVal TransactionType As Variant, ByVal Qty As Double) As Double
-
-    Select Case UCase$(Trim$(CStr(TransactionType)))
-        Case "OPENING BALANCE", "PURCHASE", "MOVEMENT IN"
-            GetOpeningImpact = Abs(Qty)
-        Case "MOVEMENT OUT", "SCRAP"
-            GetOpeningImpact = -Abs(Qty)
-        Case Else
-            GetOpeningImpact = Qty
-    End Select
-
-End Function
