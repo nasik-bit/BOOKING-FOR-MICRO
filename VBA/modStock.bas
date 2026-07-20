@@ -21,7 +21,7 @@ Public Sub GenerateCurrentStock()
     Dim itemAggDict As Object
 
     Dim r As Long
-    Dim dateKey As Long
+    Dim dtKey As Long
     Dim itemCode As String
     Dim locationCode As String
     Dim closeQty As Double
@@ -67,21 +67,21 @@ Public Sub GenerateCurrentStock()
     Set itemAggDict = CreateObject("Scripting.Dictionary")
 
     For r = 1 To UBound(data, 1)
-        dateKey = DateKey(data(r, colDate))
+        dtKey = DateKey(data(r, colDate))
         itemCode = NormalizeText(data(r, colItem))
         locationCode = NormalizeLocation(data(r, colLoc))
         closeQty = SafeNumber(data(r, colClose), 0)
 
-        If dateKey = 0 Then GoTo NextRow
+        If dtKey = 0 Then GoTo NextRow
         If Len(itemCode) = 0 Then GoTo NextRow
         If Len(locationCode) = 0 Then GoTo NextRow
 
         keyIL = itemCode & "|" & locationCode
         If Not latestDateDict.Exists(keyIL) Then
-            latestDateDict(keyIL) = dateKey
+            latestDateDict(keyIL) = dtKey
             latestQtyDict(keyIL) = closeQty
-        ElseIf dateKey >= CLng(latestDateDict(keyIL)) Then
-            latestDateDict(keyIL) = dateKey
+        ElseIf dtKey >= CLng(latestDateDict(keyIL)) Then
+            latestDateDict(keyIL) = dtKey
             latestQtyDict(keyIL) = closeQty
         End If
 NextRow:

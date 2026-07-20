@@ -45,7 +45,7 @@ Public Sub GenerateDateWiseStock()
     Dim movement As Double
     Dim openingQty As Double
     Dim closingQty As Double
-    Dim dateKey As Long
+    Dim dtKey As Long
 
     On Error GoTo ErrHandler
     BeginApp appState, "Generating DATE_WISE_STOCK..."
@@ -87,12 +87,12 @@ Public Sub GenerateDateWiseStock()
     maxDate = 0
 
     For r = 1 To UBound(data, 1)
-        dateKey = DateKey(data(r, colDate))
+        dtKey = DateKey(data(r, colDate))
         itemCode = NormalizeText(data(r, colItem))
         locationCode = NormalizeLocation(data(r, colLoc))
         movement = SafeNumber(data(r, colPackets), 0)
 
-        If dateKey = 0 Then
+        If dtKey = 0 Then
             AddDWValidation logData, logCount, r + 1, "", "", "Blank Dates", "Event Date is blank/invalid."
             GoTo NextRow
         End If
@@ -106,7 +106,7 @@ Public Sub GenerateDateWiseStock()
         End If
 
         keyIL = itemCode & "|" & locationCode
-        keyDIL = CStr(dateKey) & "|" & keyIL
+        keyDIL = CStr(dtKey) & "|" & keyIL
 
         If Not itemLocDict.Exists(keyIL) Then itemLocDict(keyIL) = True
         If movDict.Exists(keyDIL) Then
@@ -115,8 +115,8 @@ Public Sub GenerateDateWiseStock()
             movDict(keyDIL) = movement
         End If
 
-        If minDate = 0 Or dateKey < minDate Then minDate = dateKey
-        If maxDate = 0 Or dateKey > maxDate Then maxDate = dateKey
+        If minDate = 0 Or dtKey < minDate Then minDate = dtKey
+        If maxDate = 0 Or dtKey > maxDate Then maxDate = dtKey
 NextRow:
     Next r
 
