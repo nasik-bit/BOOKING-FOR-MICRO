@@ -1,6 +1,8 @@
 Attribute VB_Name = "modStock"
 Option Explicit
 
+Private Const STOCK_MAX_LONG As Long = 2147483647
+
 Public Sub GenerateCurrentStock()
 
     Const LOC_COUNT As Long = 4
@@ -41,7 +43,7 @@ Public Sub GenerateCurrentStock()
     Set wsMov = ThisWorkbook.Worksheets(SHEET_MOVEMENT)
     Set wsOpen = ThisWorkbook.Worksheets(SHEET_OPENING)
     Set wsStock = CreateSheet(SHEET_STOCK)
-    earliestOpenDate = 2147483647
+    earliestOpenDate = STOCK_MAX_LONG
 
     wsStock.Cells.Clear
     wsStock.Range("A1:B1").Value = Array("Location", "Current Stock")

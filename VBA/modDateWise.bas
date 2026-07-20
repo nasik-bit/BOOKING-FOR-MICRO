@@ -66,6 +66,7 @@ Private Const ROWS_PER_DATE As Long = 6  ' 4 locations + 1 GRAND TOTAL + 1 blank
 Private Const CLR_HEADER   As Long = 15128749
 Private Const CLR_GRANDTOT As Long = 10092543
 Private Const CLR_NEGATIVE As Long = 255
+Private Const DATEWISE_MAX_LONG As Long = 2147483647
 
 ' ===========================================================================
 ' GenerateDateWiseStock  –  Public entry point
@@ -126,7 +127,7 @@ Public Sub GenerateDateWiseStock()
     Set wsOpen = ThisWorkbook.Worksheets(SHEET_OPENING)
     Set wsMov  = ThisWorkbook.Worksheets(SHEET_MOVEMENT)
     Set wsDW   = CreateSheet(SHEET_DATE_WISE)
-    earliestOpenDate = 2147483647
+    earliestOpenDate = DATEWISE_MAX_LONG
 
     wsDW.Cells.Clear   ' Wipe content AND formatting from any prior run
 
